@@ -5,25 +5,9 @@ import 'package:my_app/models/app_state.dart';
 import 'package:my_app/models/models.dart';
 import 'package:redux/redux.dart';
 
-class TodoForm extends StatefulWidget {
-  @override
-  _TodoFormState createState() => _TodoFormState();
-}
-
-class _TodoFormState extends State<TodoForm> {
-  TextEditingController controller;
-
-  void initState() {
-    super.initState();
-    controller = TextEditingController();
-  }
-
-  Widget withStoreConnection(Function(Store<AppState>) callback) {
-    return StoreConnector<AppState, Store<AppState>>(
-      converter: (store) => store,
-      builder: (context, store) => callback(store)
-    );
-  }
+@immutable
+class TodoForm extends StatelessWidget {
+  TextEditingController controller = TextEditingController();
 
   Future<void> _handleAddTask(BuildContext context) {
     final Duration duration = Duration(seconds: 1);

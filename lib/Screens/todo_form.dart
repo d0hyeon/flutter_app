@@ -34,7 +34,7 @@ class TodoForm extends StatelessWidget {
             children: [
               TextField(
                 controller: controller,
-                obscureText: true,
+                obscureText: false,
                 keyboardType: TextInputType.text,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(

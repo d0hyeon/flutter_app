@@ -232,16 +232,17 @@ class _WorkoutState extends State<Workout> {
                                     constraints: BoxConstraints(
                                       minHeight: 40,
                                     ),
-                                    fillColor: Colors.white,
+                                    fillColor: Colors.grey[800],
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(18.0),
+                                      side: BorderSide(color: Colors.white60),
                                     ),
                                     child: Text(
                                         workoutState == WorkoutState.walk
                                             ? '일시중지'
                                             : '재시작',
                                         style: TextStyle(
-                                          color: Colors.black,
+                                          color: Colors.white,
                                         )),
                                     onPressed: () {
                                       setWorkoutState(

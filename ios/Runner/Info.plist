@@ -41,5 +41,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>I will always keep an eye on you.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>I will always keep an eye on you.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>I will always keep an eye on you.</string>
 </dict>
 </plist>

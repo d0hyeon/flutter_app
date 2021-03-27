@@ -107,8 +107,8 @@ class _WorkoutState extends State<Workout> {
         }
 
         if (isUserControl) {
-          // 사용자 의지로 맵 위치를 변경시켰는데 자동으로 위치를 이동시키면 불편함을 제공하기 때문에
-          // 움직임이 다시 재개되고 일정 시간 뒤에 현위치로 이동
+          // 사용자 의지로 지도를 이동하였는데, 자동으로 현재 위치로 다시 돌리면 불편함을 제공하기 때문에
+          // 사용자의 마지막 터치 이후 10초 뒤에 현재위치로 다시 돌아오도록 함
           locationState = MapLocationState.static;
           timer?.cancel();
           return timer = new Timer(USER_CONTROL_SCREEN_DURATION, () {

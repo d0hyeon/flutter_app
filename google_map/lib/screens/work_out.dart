@@ -194,8 +194,6 @@ class _WorkoutState extends State<Workout> {
  
   @override
   Widget build(BuildContext context) {
-    print('polylinepolylinepolylinepolyline');
-    print(polyline.points);
     return Scaffold(
         appBar: AppBar(
           title: Text('Workout'),

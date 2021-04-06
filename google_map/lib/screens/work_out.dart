@@ -27,15 +27,25 @@ class _WorkoutState extends State<Workout> {
   GoogleMapController _controller;
   StreamSubscription<Position> _locationStream;
   Position lastPosition;
-  Marker _marker =
-      Marker(markerId: MarkerId(USER_MARKER_NAME), alpha: 1, rotation: 0);
+  
+  Marker _marker =Marker(markerId: MarkerId(USER_MARKER_NAME), visible: false);
   Set<Position> routes = {};
 
-  void setMarkerPosition(Position position) {
+  static Future<BitmapDescriptor> createUserMarkerIcon() {
+    return BitmapDescriptor.fromAssetImage(
+      ImageConfiguration(size: Size.square(1)), 
+      'assets/image/dot.png'
+    );
+  }
+
+  void setMarkerPosition(Position position) async {
+    BitmapDescriptor icon = await createUserMarkerIcon();
     setState(() {
       _marker = _marker.copyWith(
           positionParam: LatLng(position.latitude, position.longitude),
-          alphaParam: 1);
+          visibleParam: true,
+          iconParam: icon
+        );
     });
   }
 

@@ -4,10 +4,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:my_app/constants/map.dart';
 import 'package:my_app/screens/work_out_result.dart';
+import 'package:my_app/utils/google_map.dart';
 import 'package:my_app/utils/location.dart';
 
 enum WorkoutState { base, walk, pause, done }
-const String USER_MARKER_NAME = 'user';
+const String USER_MARKER_NAME = 'user_marker';
+const String USER_POLYLINE_NAME = 'user_polyline';
 const Duration USER_CONTROL_SCREEN_DURATION = Duration(seconds: 10);
 const Duration USER_PAUSE_WORKING_DURATION = Duration(seconds: 10);
 const double DEFAULT_ZOOM = 18;
@@ -19,29 +21,35 @@ class Workout extends StatefulWidget {
 }
 
 class _WorkoutState extends State<Workout> {
+  // 위젯 컨트롤 관련 변수
   final Completer<GoogleMapController> _completer = Completer();
+  GoogleMapController _controller;
   bool isUserControl = false;
   bool isPause = false;
   WorkoutState workoutState = WorkoutState.base;
 
-  GoogleMapController _controller;
+  // 지속적인 변수
+  Set<Timer> timers = {};
   StreamSubscription<Position> _locationStream;
+
+  // 위치정보 관련 변수
   Position lastPosition;
-  
-  Marker _marker =Marker(markerId: MarkerId(USER_MARKER_NAME), visible: false);
   Set<Position> routes = {};
 
-  static Future<BitmapDescriptor> createUserMarkerIcon() {
-    return BitmapDescriptor.fromAssetImage(
-      ImageConfiguration(size: Size.square(1)), 
-      'assets/image/dot.png'
-    );
-  }
+  // 구글맵 프로퍼티 변수
+  Polyline polyline = Polyline(
+    polylineId: PolylineId(USER_POLYLINE_NAME),
+    color: Colors.red[600],
+    width: 3,
+    startCap: Cap.buttCap,
+    endCap: Cap.squareCap,
+  );
+  Marker marker = Marker(markerId: MarkerId(USER_MARKER_NAME), visible: false);
 
   void setMarkerPosition(Position position) async {
     BitmapDescriptor icon = await createUserMarkerIcon();
     setState(() {
-      _marker = _marker.copyWith(
+      marker = marker.copyWith(
           positionParam: LatLng(position.latitude, position.longitude),
           visibleParam: true,
           iconParam: icon
@@ -70,12 +78,12 @@ class _WorkoutState extends State<Workout> {
           }
         case WorkoutState.pause:
           {
-            _locationStream?.cancel();
+            cancelStreams();
             break;
           }
         case WorkoutState.done:
           {
-            _locationStream?.cancel();
+            cancelStreams();
             // Navigator.popAndPushNamed(context, '/work_out_result')
             Navigator.pushNamed(context, '/work_out_result', arguments: WorkoutResultArguments(
               routes: routes
@@ -97,10 +105,45 @@ class _WorkoutState extends State<Workout> {
     setCameraPosition(position);
     setMarkerPosition(position);
   }
+  
+  void cancelStreams () {
+    _locationStream?.cancel();
+    timers.forEach((timer) {
+      timer.cancel();
+    });
+    timers = {};
+  }
 
   void subscribeLocationStream() async {
     Timer timer;
+    Position currPosition = lastPosition;
+    List<Position> currRoutes = [];
     MapLocationState locationState = MapLocationState.dynamic;
+
+    timers.add(
+      Timer.periodic(Duration(seconds: 10), (timer) {
+        setState(() {
+          if(currRoutes.isNotEmpty) {
+            polyline = polyline.copyWith(
+              pointsParam: [
+                ...polyline.points.toList(),
+                ...(
+                  currRoutes.map((route) => LatLng(route.latitude, route.longitude)).toList()
+                )
+              ]
+            );
+            routes.addAll(currRoutes);
+            currRoutes = [];
+          }
+        });
+      })
+    );
+
+    timers.add(
+      Timer.periodic(Duration(seconds: 1), (_) {
+        currRoutes.add(currPosition);
+      })
+    );
 
     _locationStream = Geolocator.getPositionStream(
             desiredAccuracy: LocationAccuracy.best,
@@ -113,7 +156,7 @@ class _WorkoutState extends State<Workout> {
         double diffLng = lastPosition.longitude - position.longitude;
 
         if (diffLat.abs() > 0.000015 || diffLng.abs() > 0.000015) {
-          routes.add(position);
+          currPosition = position;
         }
 
         if (isUserControl) {
@@ -146,11 +189,13 @@ class _WorkoutState extends State<Workout> {
   @override
   void dispose() {
     super.dispose();
-    _locationStream?.cancel();
+    cancelStreams();
   }
-
+ 
   @override
   Widget build(BuildContext context) {
+    print('polylinepolylinepolylinepolyline');
+    print(polyline.points);
     return Scaffold(
         appBar: AppBar(
           title: Text('Workout'),
@@ -171,11 +216,12 @@ class _WorkoutState extends State<Workout> {
                       child: GoogleMap(
                         mapType: MapType.normal,
                         initialCameraPosition: INITIAL_CAMERA_POSITION,
-                        markers: {_marker},
                         onMapCreated: (GoogleMapController controller) {
                           _controller = controller;
                           _completer.complete(controller);
                         },
+                        markers: {marker},
+                        polylines: {polyline},
                         compassEnabled: true,
                         myLocationButtonEnabled: true,
                       )),
@@ -191,6 +237,7 @@ class _WorkoutState extends State<Workout> {
                             color: Colors.white,
                             height: 35,
                             minWidth: 35,
+                            
                             onPressed: setCurrentLocation,
                           ),
                         ],
@@ -231,37 +278,36 @@ class _WorkoutState extends State<Workout> {
                                           : WorkoutState.done);
                                 },
                               ))),
-                      workoutState == WorkoutState.walk ||
-                              workoutState == WorkoutState.pause
-                          ? Expanded(
-                              flex: 1,
-                              child: Padding(
-                                  padding: EdgeInsets.symmetric(
-                                      vertical: 0, horizontal: 5),
-                                  child: RawMaterialButton(
-                                    constraints: BoxConstraints(
-                                      minHeight: 40,
-                                    ),
-                                    fillColor: Colors.grey[800],
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(18.0),
-                                      side: BorderSide(color: Colors.white60),
-                                    ),
-                                    child: Text(
+                      workoutState == WorkoutState.walk || workoutState == WorkoutState.pause
+                        ? Expanded(
+                            flex: 1,
+                            child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                    vertical: 0, horizontal: 5),
+                                child: RawMaterialButton(
+                                  constraints: BoxConstraints(
+                                    minHeight: 40,
+                                  ),
+                                  fillColor: Colors.grey[800],
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(18.0),
+                                    side: BorderSide(color: Colors.white60),
+                                  ),
+                                  child: Text(
+                                      workoutState == WorkoutState.walk
+                                          ? '일시중지'
+                                          : '재시작',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                      )),
+                                  onPressed: () {
+                                    setWorkoutState(
                                         workoutState == WorkoutState.walk
-                                            ? '일시중지'
-                                            : '재시작',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                        )),
-                                    onPressed: () {
-                                      setWorkoutState(
-                                          workoutState == WorkoutState.walk
-                                              ? WorkoutState.pause
-                                              : WorkoutState.walk);
-                                    },
-                                  )))
-                          : SizedBox.shrink()
+                                            ? WorkoutState.pause
+                                            : WorkoutState.walk);
+                                  },
+                                )))
+                        : SizedBox.shrink()
                     ],
                   ),
                 ))

@@ -1,16 +1,17 @@
-# flutter_app
+# 산책 앱
 
-A new Flutter project.
+<div align="center">
+  <img src="https://user-images.githubusercontent.com/57202547/112729592-52037700-8f70-11eb-9261-0600de0c45e1.png" />
+</div>
+<div align="center">
+  <img src="https://user-images.githubusercontent.com/57202547/112729605-6182c000-8f70-11eb-9844-bd7758077fd1.png" />
+</div>
+<div align="center">
+  <img src="https://user-images.githubusercontent.com/57202547/112729613-6cd5eb80-8f70-11eb-842d-381db1b52cd5.png" />
+</div>
+<div align="center">
+  <img src="https://user-images.githubusercontent.com/57202547/112729647-9c84f380-8f70-11eb-8cd4-c9f4330b8677.png" />
+</div>
 
-## Getting Started
 
-This project is a starting point for a Flutter application.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://flutter.dev/docs/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://flutter.dev/docs/cookbook)
-
-For help getting started with Flutter, view our
-[online documentation](https://flutter.dev/docs), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.

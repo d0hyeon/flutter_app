@@ -97,12 +97,12 @@ class _WorkoutState extends State<Workout> {
           }
         case WorkoutState.pause:
           {
-            cancelStreams();
+            clear();
             break;
           }
         case WorkoutState.done:
           {
-            cancelStreams();
+            clear();
             // Navigator.popAndPushNamed(context, '/work_out_result')
             Navigator.pushNamed(context, '/work_out_result', arguments: WorkoutResultArguments(
               routes: routes
@@ -125,7 +125,7 @@ class _WorkoutState extends State<Workout> {
     setMarkerPosition(position);
   }
   
-  void cancelStreams () {
+  void clear () {
     _locationStream?.cancel();
     timers.forEach((timer) {
       timer.cancel();
@@ -235,7 +235,7 @@ class _WorkoutState extends State<Workout> {
   @override
   void dispose() {
     super.dispose();
-    cancelStreams();
+    clear();
   }
  
   @override

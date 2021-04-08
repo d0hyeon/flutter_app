@@ -197,7 +197,7 @@ class _WorkoutState extends State<Workout> {
 
   void addSpaceMarkers () async {
     Set<Marker> markers = Set();
-    Future.forEach(mock_spaces, (space) async {
+    Future.forEach(mock_spaces, (Space space) async {
       ByteData markerByteData = await WidgetToImage.widgetToImage(SpaceMarker(
         Text(
           space.count.toString(),
@@ -212,7 +212,11 @@ class _WorkoutState extends State<Workout> {
       Marker marker = Marker(
         markerId: MarkerId(space.title),
         position: space.latlng,
-        icon: BitmapDescriptor.fromBytes(markerByteData.buffer.asUint8List())
+        icon: BitmapDescriptor.fromBytes(markerByteData.buffer.asUint8List()),
+        infoWindow: InfoWindow(
+          title: space.title,
+          snippet: space.description
+        )
       );
       markers.add(marker);
     }).then((_) {

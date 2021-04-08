@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:my_app/constants/map.dart';
+import 'package:my_app/models/space.dart';
 import 'package:my_app/screens/work_out_result.dart';
 import 'package:my_app/utils/google_map.dart';
 import 'package:my_app/utils/location.dart';
+import 'package:my_app/widgets/space_marker.dart';
+import 'package:widget_to_image/widget_to_image.dart';
 
 enum WorkoutState { base, walk, pause, done }
 const String USER_MARKER_NAME = 'user_marker';
@@ -13,6 +18,19 @@ const String USER_POLYLINE_NAME = 'user_polyline';
 const Duration USER_CONTROL_SCREEN_DURATION = Duration(seconds: 10);
 const Duration USER_PAUSE_WORKING_DURATION = Duration(seconds: 10);
 const double DEFAULT_ZOOM = 18;
+
+List<Space> mock_spaces = [
+  Space(
+    latlng: LatLng(37.624174, 127.092125),
+    title: '화랑대 폐역',
+    count: 231,
+  ),
+  Space(
+    latlng: LatLng(37.6231, 127.0803),
+    title: '뚜레주르',
+    count: 5
+  )
+];
 
 class Workout extends StatefulWidget {
   static String routeName = '/work_out';
@@ -44,12 +62,13 @@ class _WorkoutState extends State<Workout> {
     startCap: Cap.buttCap,
     endCap: Cap.squareCap,
   );
-  Marker marker = Marker(markerId: MarkerId(USER_MARKER_NAME), visible: false);
+  Marker userMarker = Marker(markerId: MarkerId(USER_MARKER_NAME), visible: false);
+  Set<Marker> spaceMarkers = Set();
 
   void setMarkerPosition(Position position) async {
     BitmapDescriptor icon = await createUserMarkerIcon();
     setState(() {
-      marker = marker.copyWith(
+      userMarker = userMarker.copyWith(
           positionParam: LatLng(position.latitude, position.longitude),
           visibleParam: true,
           iconParam: icon
@@ -176,6 +195,33 @@ class _WorkoutState extends State<Workout> {
     });
   }
 
+  void addSpaceMarkers () async {
+    Set<Marker> markers = Set();
+    Future.forEach(mock_spaces, (space) async {
+      ByteData markerByteData = await WidgetToImage.widgetToImage(SpaceMarker(
+        Text(
+          space.count.toString(),
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 45
+          ),
+          textDirection: TextDirection.ltr,
+        ),
+      ));
+      
+      Marker marker = Marker(
+        markerId: MarkerId(space.title),
+        position: space.latlng,
+        icon: BitmapDescriptor.fromBytes(markerByteData.buffer.asUint8List())
+      );
+      markers.add(marker);
+    }).then((_) {
+      setState(() {
+        spaceMarkers.addAll(markers);
+      });
+    });
+  }
+
   @override
   void didChangeDependencies() async {
     bool serviceEnabled = await requestLocationService();
@@ -194,9 +240,19 @@ class _WorkoutState extends State<Workout> {
  
   @override
   Widget build(BuildContext context) {
+    Set<Marker> markers = Set();
+    markers.add(userMarker);
+    if(spaceMarkers.isNotEmpty) {
+      markers.addAll(spaceMarkers);
+    }
     return Scaffold(
         appBar: AppBar(
           title: Text('Workout'),
+        ),
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: Colors.white,
+          onPressed: addSpaceMarkers ,
+          child: Icon(Icons.add_location_outlined),
         ),
         body: Column(
           children: [
@@ -218,7 +274,7 @@ class _WorkoutState extends State<Workout> {
                           _controller = controller;
                           _completer.complete(controller);
                         },
-                        markers: {marker},
+                        markers: markers,
                         polylines: {polyline},
                         compassEnabled: true,
                         myLocationButtonEnabled: true,

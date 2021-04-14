@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:isolate';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -32,6 +34,48 @@ List<Space> mock_spaces = [
   )
 ];
 
+void backgroundWorkoutLoaction (SendPort mainPort) {
+  ReceivePort backgroundPort = ReceivePort();
+  StreamSubscription messageStream;
+  StreamSubscription locationStream;
+  WorkoutState beforeWorkoutState = WorkoutState.base;
+  
+  mainPort.send(backgroundPort.sendPort);
+  messageStream = backgroundPort.listen((message) {
+    if(message is WorkoutState) {
+      switch(message) {
+        case WorkoutState.walk: {
+          if(beforeWorkoutState == WorkoutState.pause) {
+            locationStream.resume();  
+          } else {
+            locationStream = Geolocator.getPositionStream(
+              desiredAccuracy: LocationAccuracy.best,
+              intervalDuration: Duration(seconds: 2)
+            ).listen((Position position) {
+              mainPort.send(position);
+            });
+          }
+          break;
+        }
+        case WorkoutState.pause: {
+          locationStream.pause();
+          break;
+        }
+        case WorkoutState.done: {
+          locationStream.cancel();
+          messageStream.cancel();
+          backgroundPort.close();
+          break;
+        }
+        default: {
+
+        }
+      }
+      beforeWorkoutState = message;
+    }
+  });
+}
+
 class Workout extends StatefulWidget {
   static String routeName = '/work_out';
   @override
@@ -39,19 +83,25 @@ class Workout extends StatefulWidget {
 }
 
 class _WorkoutState extends State<Workout> {
+  final ReceivePort mainPort = ReceivePort();
+  SendPort backgroundPort;
+  Isolate backgroundIsolate;
   // 위젯 컨트롤 관련 변수
   final Completer<GoogleMapController> _completer = Completer();
   GoogleMapController _controller;
   bool isUserControl = false;
   bool isPause = false;
   WorkoutState workoutState = WorkoutState.base;
+  MapLocationState locationState = MapLocationState.dynamic;
 
   // 지속적인 변수
   Set<Timer> timers = {};
   StreamSubscription<Position> _locationStream;
+  StreamSubscription backgroundMessageStream;
 
   // 위치정보 관련 변수
-  Position lastPosition;
+  Position mapPosition;
+  Position currentPosition;
   Set<Position> routes = {};
 
   // 구글맵 프로퍼티 변수
@@ -65,8 +115,9 @@ class _WorkoutState extends State<Workout> {
   Marker userMarker = Marker(markerId: MarkerId(USER_MARKER_NAME), visible: false);
   Set<Marker> spaceMarkers = Set();
 
-  void setMarkerPosition(Position position) async {
-    BitmapDescriptor icon = await createUserMarkerIcon();
+  void setUserMarkerPosition(Position position) async {
+    currentPosition = position;
+    BitmapDescriptor icon = userMarker.icon ?? await createUserMarkerIcon();
     setState(() {
       userMarker = userMarker.copyWith(
           positionParam: LatLng(position.latitude, position.longitude),
@@ -83,7 +134,7 @@ class _WorkoutState extends State<Workout> {
       tilt: tilt,
       zoom: zoom,
     );
-    lastPosition = position;
+    mapPosition = position;
     _controller.animateCamera(CameraUpdate.newCameraPosition(cameraPosition));
   }
 
@@ -92,17 +143,19 @@ class _WorkoutState extends State<Workout> {
       switch (state) {
         case WorkoutState.walk:
           {
-            subscribeLocationStream();
+            backgroundPort.send(WorkoutState.walk); 
+            runDrawPolyline();
             break;
           }
         case WorkoutState.pause:
           {
-            clear();
+            backgroundPort.send(WorkoutState.pause);
+            clearTimers();
             break;
           }
         case WorkoutState.done:
           {
-            clear();
+            backgroundPort.send(WorkoutState.done);
             // Navigator.popAndPushNamed(context, '/work_out_result')
             Navigator.pushNamed(context, '/work_out_result', arguments: WorkoutResultArguments(
               routes: routes
@@ -122,77 +175,90 @@ class _WorkoutState extends State<Workout> {
     Position position = await Geolocator.getCurrentPosition();
 
     setCameraPosition(position);
-    setMarkerPosition(position);
+    setUserMarkerPosition(position);
   }
   
-  void clear () {
-    _locationStream?.cancel();
+  void clearTimers() {
     timers.forEach((timer) {
       timer.cancel();
     });
     timers = {};
   }
 
-  void subscribeLocationStream() async {
-    Timer timer;
-    Position currPosition = lastPosition;
-    List<Position> currRoutes = [];
-    MapLocationState locationState = MapLocationState.dynamic;
+  Future<void> createIsolsate () async {
+    Timer blockingTimer;
+
+    backgroundMessageStream = mainPort.listen((message) {
+      if(message is SendPort) {
+        backgroundPort = message;
+      } else {
+        Position position = message;
+        setUserMarkerPosition(position);
+
+        if (position.speed > 0.01) {
+          // double diffLat = currentPosition.latitude - position.latitude;
+          // double diffLng = currentPosition.longitude - position.longitude;
+
+          // if (diffLat.abs() > 0.000015 || diffLng.abs() > 0.000015) {
+          //   currentPosition = position;
+          // }
+
+          if (isUserControl) {
+            // 사용자 의지로 지도를 이동하였는데, 자동으로 현재 위치로 다시 돌리면 불편함을 제공하기 때문에
+            // 사용자의 마지막 터치 이후 10초 뒤에 현재위치로 다시 돌아오도록 함
+            locationState = MapLocationState.static;
+            blockingTimer?.cancel();
+            return blockingTimer = new Timer(USER_CONTROL_SCREEN_DURATION, () {
+              locationState = MapLocationState.dynamic;
+            });
+          }
+
+          if (locationState == MapLocationState.dynamic) {
+            setCameraPosition(position);
+          }
+        }
+      }
+    });
+
+    backgroundIsolate = await Isolate.spawn(backgroundWorkoutLoaction, mainPort.sendPort);
+  }
+
+  void runDrawPolyline() {
+    List<Position> currentRoutes = [];
 
     timers.add(
-      Timer.periodic(Duration(seconds: 10), (timer) {
+      Timer.periodic(Duration(seconds: 10), (timer) { 
         setState(() {
-          if(currRoutes.isNotEmpty) {
+          if(currentRoutes.isNotEmpty) {
             polyline = polyline.copyWith(
               pointsParam: [
                 ...polyline.points.toList(),
                 ...(
-                  currRoutes.map((route) => LatLng(route.latitude, route.longitude)).toList()
+                  currentRoutes.map((route) => LatLng(route.latitude, route.longitude))
                 )
               ]
             );
-            routes.addAll(currRoutes);
-            currRoutes = [];
+            routes.addAll(currentRoutes);
+            currentRoutes.clear();
           }
         });
       })
     );
 
     timers.add(
-      Timer.periodic(Duration(seconds: 1), (_) {
-        currRoutes.add(currPosition);
+      Timer.periodic(Duration(seconds: 2), (timer) {
+        currentRoutes.add(currentPosition);
+        // Position prevRoutesPosition = currentRoutes[currentRoutes.length-1];
+        // if(
+        //   currentRoutes.isEmpty || (
+        //     prevRoutesPosition.latitude != currentPosition.latitude &&
+        //     prevRoutesPosition.longitude != currentPosition.longitude
+        //   )
+        // ) {
+        //   currentRoutes.add(currentPosition);
+        // }
       })
     );
-
-    _locationStream = Geolocator.getPositionStream(
-            desiredAccuracy: LocationAccuracy.best,
-            intervalDuration: Duration(seconds: 2))
-        .listen((Position position) async {
-      setMarkerPosition(position);
-
-      if (position.speed > 0.01) {
-        double diffLat = lastPosition.latitude - position.latitude;
-        double diffLng = lastPosition.longitude - position.longitude;
-
-        if (diffLat.abs() > 0.000015 || diffLng.abs() > 0.000015) {
-          currPosition = position;
-        }
-
-        if (isUserControl) {
-          // 사용자 의지로 지도를 이동하였는데, 자동으로 현재 위치로 다시 돌리면 불편함을 제공하기 때문에
-          // 사용자의 마지막 터치 이후 10초 뒤에 현재위치로 다시 돌아오도록 함
-          locationState = MapLocationState.static;
-          timer?.cancel();
-          return timer = new Timer(USER_CONTROL_SCREEN_DURATION, () {
-            locationState = MapLocationState.dynamic;
-          });
-        }
-
-        if (locationState == MapLocationState.dynamic) {
-          setCameraPosition(position);
-        }
-      }
-    });
   }
 
   void addSpaceMarkers () async {
@@ -228,18 +294,22 @@ class _WorkoutState extends State<Workout> {
 
   @override
   void didChangeDependencies() async {
+    super.didChangeDependencies();
     bool serviceEnabled = await requestLocationService();
     if (!serviceEnabled) {
       Navigator.pop(context);
     }
     setCurrentLocation();
-    super.didChangeDependencies();
+    createIsolsate();
   }
 
   @override
   void dispose() {
     super.dispose();
-    clear();
+    clearTimers();
+    mainPort.close();
+    backgroundIsolate.kill();
+    backgroundMessageStream.cancel();
   }
  
   @override

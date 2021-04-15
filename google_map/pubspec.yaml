@@ -27,6 +27,8 @@ dependencies:
   geolocator: ^7.0.3
   uuid: ^3.0.1
   widget_to_image: ^1.0.4
+  flutter_isolate: ^2.0.0
+  enum_to_string: ^2.0.1
 
 
   # The following adds the Cupertino Icons font to your application.

@@ -94,6 +94,7 @@ class _WorkoutState extends State<Workout> {
   GoogleMapController _controller;
   bool isUserControl = false;
   bool isInitialize = false;
+  bool isCreatedUserIcon = false;
   WorkoutState workoutState = WorkoutState.base;
   MapLocationState locationState = MapLocationState.dynamic;
 
@@ -119,8 +120,11 @@ class _WorkoutState extends State<Workout> {
 
   void setUserMarkerPosition(Position position) async {
     currentPosition = position;
-    BitmapDescriptor icon = userMarker.icon ?? await createUserMarkerIcon();
     
+    BitmapDescriptor icon = isCreatedUserIcon ? userMarker.icon : await createUserMarkerIcon().then((res) {
+      isCreatedUserIcon = true;
+      return res;
+    });
     setState(() {
       userMarker = userMarker.copyWith(
           positionParam: LatLng(position.latitude, position.longitude),

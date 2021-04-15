@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'dart:isolate';
 import 'dart:ui';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -13,6 +13,8 @@ import 'package:my_app/utils/google_map.dart';
 import 'package:my_app/utils/location.dart';
 import 'package:my_app/widgets/space_marker.dart';
 import 'package:widget_to_image/widget_to_image.dart';
+import 'package:flutter_isolate/flutter_isolate.dart';
+import 'package:enum_to_string/enum_to_string.dart';
 
 enum WorkoutState { base, walk, pause, done }
 const String USER_MARKER_NAME = 'user_marker';
@@ -35,15 +37,16 @@ List<Space> mock_spaces = [
 ];
 
 void backgroundWorkoutLoaction (SendPort mainPort) {
+
   ReceivePort backgroundPort = ReceivePort();
   StreamSubscription messageStream;
   StreamSubscription locationStream;
   WorkoutState beforeWorkoutState = WorkoutState.base;
-  
   mainPort.send(backgroundPort.sendPort);
   messageStream = backgroundPort.listen((message) {
-    if(message is WorkoutState) {
-      switch(message) {
+    WorkoutState workoutState = EnumToString.fromString<WorkoutState>(WorkoutState.values, message);
+    if(workoutState is WorkoutState) {
+      switch(workoutState) {
         case WorkoutState.walk: {
           if(beforeWorkoutState == WorkoutState.pause) {
             locationStream.resume();  
@@ -52,7 +55,7 @@ void backgroundWorkoutLoaction (SendPort mainPort) {
               desiredAccuracy: LocationAccuracy.best,
               intervalDuration: Duration(seconds: 2)
             ).listen((Position position) {
-              mainPort.send(position);
+              mainPort.send(position.toJson());
             });
           }
           break;
@@ -85,18 +88,17 @@ class Workout extends StatefulWidget {
 class _WorkoutState extends State<Workout> {
   final ReceivePort mainPort = ReceivePort();
   SendPort backgroundPort;
-  Isolate backgroundIsolate;
+  FlutterIsolate backgroundIsolate;
   // 위젯 컨트롤 관련 변수
   final Completer<GoogleMapController> _completer = Completer();
   GoogleMapController _controller;
   bool isUserControl = false;
-  bool isPause = false;
+  bool isInitialize = false;
   WorkoutState workoutState = WorkoutState.base;
   MapLocationState locationState = MapLocationState.dynamic;
 
   // 지속적인 변수
   Set<Timer> timers = {};
-  StreamSubscription<Position> _locationStream;
   StreamSubscription backgroundMessageStream;
 
   // 위치정보 관련 변수
@@ -118,6 +120,7 @@ class _WorkoutState extends State<Workout> {
   void setUserMarkerPosition(Position position) async {
     currentPosition = position;
     BitmapDescriptor icon = userMarker.icon ?? await createUserMarkerIcon();
+    
     setState(() {
       userMarker = userMarker.copyWith(
           positionParam: LatLng(position.latitude, position.longitude),
@@ -143,19 +146,19 @@ class _WorkoutState extends State<Workout> {
       switch (state) {
         case WorkoutState.walk:
           {
-            backgroundPort.send(WorkoutState.walk); 
+            backgroundPort.send(EnumToString.convertToString(WorkoutState.walk));
             runDrawPolyline();
             break;
           }
         case WorkoutState.pause:
           {
-            backgroundPort.send(WorkoutState.pause);
+            backgroundPort.send(EnumToString.convertToString(WorkoutState.pause));
             clearTimers();
             break;
           }
         case WorkoutState.done:
           {
-            backgroundPort.send(WorkoutState.done);
+            backgroundPort.send(EnumToString.convertToString(WorkoutState.done));
             // Navigator.popAndPushNamed(context, '/work_out_result')
             Navigator.pushNamed(context, '/work_out_result', arguments: WorkoutResultArguments(
               routes: routes
@@ -187,12 +190,14 @@ class _WorkoutState extends State<Workout> {
 
   Future<void> createIsolsate () async {
     Timer blockingTimer;
-
     backgroundMessageStream = mainPort.listen((message) {
       if(message is SendPort) {
         backgroundPort = message;
+        setState(() {
+          isInitialize = true;
+        });
       } else {
-        Position position = message;
+        Position position = Position.fromMap(message);
         setUserMarkerPosition(position);
 
         if (position.speed > 0.01) {
@@ -220,12 +225,11 @@ class _WorkoutState extends State<Workout> {
       }
     });
 
-    backgroundIsolate = await Isolate.spawn(backgroundWorkoutLoaction, mainPort.sendPort);
+    backgroundIsolate = await FlutterIsolate.spawn(backgroundWorkoutLoaction, mainPort.sendPort);
   }
 
   void runDrawPolyline() {
     List<Position> currentRoutes = [];
-
     timers.add(
       Timer.periodic(Duration(seconds: 10), (timer) { 
         setState(() {
@@ -247,16 +251,16 @@ class _WorkoutState extends State<Workout> {
 
     timers.add(
       Timer.periodic(Duration(seconds: 2), (timer) {
+        if(currentRoutes.isNotEmpty) {
+          Position lastPosition = currentRoutes[currentRoutes.length-1];
+          if(
+            lastPosition.latitude == currentPosition.latitude &&
+            lastPosition.longitude == currentPosition.longitude
+          ) {
+            return;
+          }
+        }
         currentRoutes.add(currentPosition);
-        // Position prevRoutesPosition = currentRoutes[currentRoutes.length-1];
-        // if(
-        //   currentRoutes.isEmpty || (
-        //     prevRoutesPosition.latitude != currentPosition.latitude &&
-        //     prevRoutesPosition.longitude != currentPosition.longitude
-        //   )
-        // ) {
-        //   currentRoutes.add(currentPosition);
-        // }
       })
     );
   }
@@ -375,70 +379,75 @@ class _WorkoutState extends State<Workout> {
             ),
             Expanded(
                 flex: 2,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20, horizontal: 5),
-                  child: Row(
-                    children: [
-                      Expanded(
-                          flex: 1,
-                          child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                  vertical: 0, horizontal: 5),
-                              child: RawMaterialButton(
-                                constraints: BoxConstraints(
-                                  minHeight: 40,
-                                ),
-                                fillColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18.0),
-                                ),
-                                child: Text(
-                                    workoutState == WorkoutState.base
-                                        ? '시작'
-                                        : '종료',
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                    )),
-                                onPressed: () {
-                                  setWorkoutState(
-                                      workoutState == WorkoutState.base
-                                          ? WorkoutState.walk
-                                          : WorkoutState.done);
-                                },
-                              ))),
-                      workoutState == WorkoutState.walk || workoutState == WorkoutState.pause
-                        ? Expanded(
-                            flex: 1,
-                            child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                    vertical: 0, horizontal: 5),
-                                child: RawMaterialButton(
-                                  constraints: BoxConstraints(
-                                    minHeight: 40,
-                                  ),
-                                  fillColor: Colors.grey[800],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(18.0),
-                                    side: BorderSide(color: Colors.white60),
-                                  ),
-                                  child: Text(
-                                      workoutState == WorkoutState.walk
-                                          ? '일시중지'
-                                          : '재시작',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                      )),
-                                  onPressed: () {
-                                    setWorkoutState(
-                                        workoutState == WorkoutState.walk
-                                            ? WorkoutState.pause
-                                            : WorkoutState.walk);
-                                  },
-                                )))
-                        : SizedBox.shrink()
-                    ],
-                  ),
-                ))
+                child: isInitialize 
+                  ? Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20, horizontal: 5),
+                      child: Row(
+                        children: [
+                          Expanded(
+                              flex: 1,
+                              child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: 0, horizontal: 5),
+                                  child: RawMaterialButton(
+                                    constraints: BoxConstraints(
+                                      minHeight: 40,
+                                    ),
+                                    fillColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18.0),
+                                    ),
+                                    child: Text(
+                                        workoutState == WorkoutState.base
+                                            ? '시작'
+                                            : '종료',
+                                        style: TextStyle(
+                                          color: Colors.black,
+                                        )),
+                                    onPressed: () {
+                                      setWorkoutState(
+                                          workoutState == WorkoutState.base
+                                              ? WorkoutState.walk
+                                              : WorkoutState.done);
+                                    },
+                                  ))),
+                          workoutState == WorkoutState.walk || workoutState == WorkoutState.pause
+                            ? Expanded(
+                                flex: 1,
+                                child: Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        vertical: 0, horizontal: 5),
+                                    child: RawMaterialButton(
+                                      constraints: BoxConstraints(
+                                        minHeight: 40,
+                                      ),
+                                      fillColor: Colors.grey[800],
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18.0),
+                                        side: BorderSide(color: Colors.white60),
+                                      ),
+                                      child: Text(
+                                          workoutState == WorkoutState.walk
+                                              ? '일시중지'
+                                              : '재시작',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                          )),
+                                      onPressed: () {
+                                        setWorkoutState(
+                                            workoutState == WorkoutState.walk
+                                                ? WorkoutState.pause
+                                                : WorkoutState.walk);
+                                      },
+                                    )))
+                            : SizedBox.shrink()
+                        ],
+                      ),
+                    )
+                  : Center(
+                      child: CircularProgressIndicator(),
+                    ) 
+                )
           ],
         ));
   }
